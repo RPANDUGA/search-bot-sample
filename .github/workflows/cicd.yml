@@ -1,36 +1,86 @@
-# This is a basic workflow to help you get started with Actions
-
 name: CI
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches:
+      - main
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+env:
+  SLACK_CHANNEL_ID: C0BC3DWKUCA
+
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  validate:
+    name: Validate static app
     runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Check JavaScript syntax
+        run: node --check outputs/search-bot/app.js
+
+      - name: Check required static files
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          test -s outputs/search-bot/index.html
+          test -s outputs/search-bot/styles.css
+          test -s outputs/search-bot/app.js
+
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t search-bot-sample:ci .
+
+      - name: Run container
+        run: docker run --rm -d --name search-bot-sample-ci -p 8080:80 search-bot-sample:ci
+
+      - name: Verify container serves app
+        run: |
+          curl --retry 10 --retry-delay 1 --retry-connrefused --fail http://127.0.0.1:8080/
+
+      - name: Stop container
+        if: always()
+        run: docker stop search-bot-sample-ci || true
+
+  notify:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs:
+      - validate
+      - docker
+    if: always()
+    env:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+    steps:
+      - name: Send Slack notification
+        if: ${{ env.SLACK_BOT_TOKEN != '' }}
+        uses: slackapi/slack-github-action@v1.27.0
+        continue-on-error: true
+        with:
+          channel-id: ${{ env.SLACK_CHANNEL_ID }}
+          slack-message: |
+            ${{ github.repository }} CI finished.
+            Validate: ${{ needs.validate.result }}
+            Docker: ${{ needs.docker.result }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Skip Slack notification
+        if: ${{ env.SLACK_BOT_TOKEN == '' }}
+        run: echo "SLACK_BOT_TOKEN is not configured; skipping Slack notification."
