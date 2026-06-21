@@ -1,0 +1,107 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - Docker Publish
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - qa
+          - staging
+          - prod
+      image_tag:
+        description: GHCR image tag to deploy
+        required: true
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SLACK_CHANNEL_ID: C0BC3DWKUCA
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+    env:
+      APP_PORT: ${{ vars.APP_PORT || '80' }}
+      CONTAINER_NAME: search-bot-sample-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+      DEPLOY_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      IMAGE_REF: ghcr.io/rpanduga/search-bot-sample:${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || 'latest' }}
+
+    steps:
+      - name: Deploy container over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: APP_PORT,CONTAINER_NAME,DEPLOY_ENVIRONMENT,GHCR_TOKEN,GHCR_USERNAME,IMAGE_REF
+          script: |
+            set -e
+
+            command -v docker >/dev/null 2>&1
+
+            if [ -n "$GHCR_USERNAME" ] && [ -n "$GHCR_TOKEN" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            fi
+
+            docker pull "$IMAGE_REF"
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+            docker run \
+              --detach \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              --publish "$APP_PORT:80" \
+              --label "app=search-bot-sample" \
+              --label "environment=$DEPLOY_ENVIRONMENT" \
+              "$IMAGE_REF"
+            docker image prune -f
+
+  notify:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs:
+      - deploy
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    env:
+      DEPLOY_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+      IMAGE_REF: ghcr.io/rpanduga/search-bot-sample:${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || 'latest' }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+    steps:
+      - name: Send Slack notification
+        if: ${{ env.SLACK_BOT_TOKEN != '' }}
+        uses: slackapi/slack-github-action@v1.27.0
+        continue-on-error: true
+        with:
+          channel-id: ${{ env.SLACK_CHANNEL_ID }}
+          slack-message: |
+            ${{ github.repository }} deploy finished.
+            Environment: ${{ env.DEPLOY_ENVIRONMENT }}
+            Result: ${{ needs.deploy.result }}
+            Image: ${{ env.IMAGE_REF }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Skip Slack notification
+        if: ${{ env.SLACK_BOT_TOKEN == '' }}
+        run: echo "SLACK_BOT_TOKEN is not configured; skipping Slack notification."
