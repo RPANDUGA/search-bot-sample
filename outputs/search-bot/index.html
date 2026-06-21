@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Search Bot</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-label="Search bot workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Local search assistant</p>
+            <h1>Search Bot</h1>
+          </div>
+          <div class="status-pill" aria-live="polite">
+            <span class="status-dot"></span>
+            <span id="doc-count">0 sources indexed</span>
+          </div>
+        </header>
+
+        <section class="query-panel" aria-label="Ask the search bot">
+          <div class="quick-prompts" aria-label="Example searches">
+            <button class="prompt-chip" data-query="How do I improve search relevance?">Improve relevance</button>
+            <button class="prompt-chip" data-query="What should I track after launch?">Launch metrics</button>
+            <button class="prompt-chip" data-query="How does the bot answer with citations?">Citations</button>
+          </div>
+
+          <form id="search-form" class="search-form">
+            <label class="sr-only" for="query-input">Search query</label>
+            <input
+              id="query-input"
+              name="query"
+              type="search"
+              autocomplete="off"
+              placeholder="Ask about search, docs, analytics, or your own sources..."
+            />
+            <button type="submit">Search</button>
+          </form>
+        </section>
+
+        <section id="answer-card" class="answer-card empty" aria-live="polite">
+          <div class="answer-header">
+            <span class="bot-avatar">SB</span>
+            <div>
+              <p class="label">Bot answer</p>
+              <h2 id="answer-title">Ask a question to search the indexed sources.</h2>
+            </div>
+          </div>
+          <div id="answer-body" class="answer-body">
+            <p>
+              Try one of the prompts above or add your own source on the right. The bot ranks matching documents, pulls
+              the strongest snippets, and cites where each point came from.
+            </p>
+          </div>
+        </section>
+
+        <section class="results-section" aria-label="Search results">
+          <div class="section-title">
+            <h2>Results</h2>
+            <span id="result-meta">No search yet</span>
+          </div>
+          <div id="results-list" class="results-list"></div>
+        </section>
+      </section>
+
+      <aside class="source-panel" aria-label="Search sources">
+        <div class="panel-block">
+          <div class="section-title">
+            <h2>Sources</h2>
+            <button id="reset-sources" class="ghost-button" type="button">Reset</button>
+          </div>
+          <div id="source-filters" class="source-filters"></div>
+        </div>
+
+        <form id="source-form" class="source-form">
+          <h2>Add a source</h2>
+          <label>
+            Title
+            <input id="source-title" type="text" placeholder="Support FAQ" required />
+          </label>
+          <label>
+            Category
+            <input id="source-category" type="text" placeholder="Docs" required />
+          </label>
+          <label>
+            Content
+            <textarea
+              id="source-content"
+              rows="7"
+              placeholder="Paste notes, docs, FAQs, or policy text for the bot to search..."
+              required
+            ></textarea>
+          </label>
+          <button type="submit">Add source</button>
+        </form>
+
+        <div class="panel-block">
+          <h2>How it works</h2>
+          <ol class="steps">
+            <li>Tokenizes the query and documents in the browser.</li>
+            <li>Scores title, category, phrase, and keyword matches.</li>
+            <li>Builds a short answer from the best cited snippets.</li>
+          </ol>
+        </div>
+      </aside>
+    </main>
+
+    <template id="result-template">
+      <article class="result-card">
+        <div class="result-topline">
+          <span class="category"></span>
+          <span class="score"></span>
+        </div>
+        <h3></h3>
+        <p></p>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
